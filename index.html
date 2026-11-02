@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="hi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Draft Shelf</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: ruled list of drafts on the left, writing pane on the right; on phones the pane slides over the list. */
+:root{
+  --bg:#EEF1F3; --surface:#FFFFFF; --fg:#13202B; --muted:#5C6B77; --line:#D5DCE1;
+  --accent:#0B6E6E; --accent-fg:#FFFFFF; --danger:#B3261E; --hover:#F4F7F8;
+  --font-display:'Bricolage Grotesque',system-ui,sans-serif;
+  --font-body:'IBM Plex Sans',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E151B; --surface:#16202A; --fg:#E6ECF0; --muted:#8FA0AD; --line:#26333E;
+    --accent:#4FC3BC; --accent-fg:#06201F; --danger:#F2736B; --hover:#1B2833; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E151B; --surface:#16202A; --fg:#E6ECF0; --muted:#8FA0AD; --line:#26333E;
+  --accent:#4FC3BC; --accent-fg:#06201F; --danger:#F2736B; --hover:#1B2833; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--font-body);
+  padding-block:20px 40px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{font:700 26px/1.1 var(--font-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.count{font:400 12px var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;font-weight:500}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--danger)}
+.tools{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.search{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:9px 12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:3px 12px;font:500 12px var(--font-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+.list{list-style:none;margin:14px 0 0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.item{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 14px;min-width:0}
+.list li:last-child .item{border-bottom:0}
+.item:hover{background:var(--hover)}
+.item[aria-current="true"]{background:var(--hover);box-shadow:inset 3px 0 0 var(--accent)}
+.item .t{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .p{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .m{display:flex;gap:10px;margin-top:4px;font:400 11px var(--font-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.empty{padding:28px 18px;color:var(--muted)}
+.empty strong{display:block;color:var(--fg);font:600 17px var(--font-display);margin-bottom:4px}
+.note{margin:12px 0 0;font-size:13px;color:var(--muted)}
+/* editor */
+.pane{display:none;min-width:0}
+.pane.open{display:flex;flex-direction:column;gap:10px;position:fixed;inset:0;z-index:20;background:var(--bg);
+  padding:calc(14px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bar .grow{flex:1}
+.back{border:0;background:none;color:var(--accent);font-weight:500;padding:6px 0}
+.status{font:400 12px var(--font-mono);color:var(--muted)}
+.titlein{width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;padding:6px 0;font:700 22px/1.2 var(--font-display)}
+.kind{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 10px}
+.body{flex:1;min-height:50vh;width:100%;resize:none;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:14px;line-height:1.6}
+.placeholder{display:none}
+.editor,.maker{display:contents}
+.pane[data-mode="make"] .editor{display:none}
+.pane:not([data-mode="make"]) .maker{display:none}
+.pane.open{overflow-y:auto}
+.acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.mh{font:700 22px/1.2 var(--font-display);margin:2px 0 0}
+.lbl{display:block;font:500 12px var(--font-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:6px}
+.wide{width:100%}
+.mk{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:10px 12px;line-height:1.55;resize:vertical}
+.mk.tall{min-height:150px}
+.hint{font-size:13px;color:var(--muted)}
+.file{width:100%;border:1px dashed var(--line);border-radius:8px;padding:10px;background:var(--surface)}
+.mout{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:12px;margin-top:6px}
+.mout[hidden]{display:none}
+@media (min-width:860px){
+  .app{grid-template-columns:minmax(0,340px) minmax(0,1fr);align-items:start;gap:32px}
+  .pane,.pane.open{display:flex;flex-direction:column;gap:10px;position:sticky;top:20px;inset:auto;z-index:auto;background:none;padding:0}
+  .back{display:none}
+  .body{min-height:60vh}
+  .pane[data-mode="make"]{position:static}
+  .placeholder{display:block;border:1px dashed var(--line);border-radius:10px;padding:48px 24px;color:var(--muted);text-align:center}
+  .pane.idle .editor{display:none}
+  .pane:not(.idle) .placeholder{display:none}
+}
+@media (max-width:859px){.placeholder{display:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app">
+  <section class="side">
+    <div class="top">
+      <div>
+        <h1>Draft Shelf</h1>
+        <div class="count" id="count">Loading</div>
+      </div>
+      <div class="acts">
+        <button class="btn" id="mk" type="button">Patra banao</button>
+        <button class="btn primary" id="new" type="button">New draft</button>
+      </div>
+    </div>
+    <div class="tools">
+      <input class="search" id="search" type="search" placeholder="Search drafts" aria-label="Search drafts">
+      <div class="chips" id="chips"></div>
+    </div>
+    <ul class="list" id="list"></ul>
+    <p class="note" id="note" hidden></p>
+  </section>
+
+  <section class="pane idle" id="pane" data-mode="edit">
+    <div class="placeholder">Pick a draft to read or edit it, or start a new one.</div>
+    <div class="editor">
+      <div class="bar">
+        <button class="back" id="back" type="button">&larr; Drafts</button>
+        <span class="grow"></span>
+        <span class="status" id="status"></span>
+      </div>
+      <input class="titlein" id="title" type="text" placeholder="Untitled draft" aria-label="Title">
+      <div class="bar">
+        <select class="kind" id="kind" aria-label="Type"></select>
+        <span class="grow"></span>
+        <button class="btn" id="copy" type="button">Copy text</button>
+        <button class="btn danger" id="del" type="button">Delete</button>
+      </div>
+      <textarea class="body" id="body" placeholder="Write or paste your draft here" aria-label="Draft text"></textarea>
+    </div>
+    <div class="maker">
+      <div class="bar">
+        <button class="back" id="mback" type="button">&larr; Drafts</button>
+        <span class="grow"></span>
+        <span class="status" id="mstatus"></span>
+      </div>
+      <h2 class="mh">Patra banao</h2>
+      <label class="lbl" for="mtype">Kaunsa patra</label>
+      <select class="kind wide" id="mtype">
+        <option value="steno">Steno patra (karyalay / adhikari ko)</option>
+        <option value="rti">RTI patra (karyalay / range ko)</option>
+        <option value="rtiuttar">RTI uttar (aavedak ko)</option>
+      </select>
+      <label class="lbl" for="mimg">Image (aavedan, patra, photo)</label>
+      <input class="file" id="mimg" type="file" accept="image/*" multiple>
+      <div class="hint" id="mimgs"></div>
+      <label class="lbl" for="mnotes">Hinglish mein batao</label>
+      <textarea class="mk tall" id="mnotes" placeholder="Jaise: range officer ko bolo ki Seva Setu aavedan ka nirakaran 7 din mein kar ke report bheje"></textarea>
+      <div class="bar">
+        <button class="btn primary" id="mgo" type="button">Draft banao</button>
+        <button class="btn" id="mstop" type="button" hidden>Stop</button>
+      </div>
+      <div class="mout" id="mout" hidden>
+        <label class="lbl" for="mprati">Prati (har line alag)</label>
+        <textarea class="mk" id="mprati" rows="3"></textarea>
+        <label class="lbl" for="mvishay">Vishay</label>
+        <input class="mk" id="mvishay" type="text">
+        <div id="msandwrap">
+          <label class="lbl" for="msand">Sandarbh</label>
+          <input class="mk" id="msand" type="text">
+        </div>
+        <label class="lbl" for="mbody">Patra ka matter (paragraph ke beech khali line)</label>
+        <textarea class="mk" id="mbody" rows="10"></textarea>
+        <label class="lbl" for="mcopy">Pratilipi (optional, har line alag)</label>
+        <textarea class="mk" id="mcopy" rows="2"></textarea>
+        <div class="bar">
+          <button class="btn primary" id="mdocx" type="button">Download .docx</button>
+          <button class="btn" id="mcopybtn" type="button">Copy text</button>
+          <button class="btn" id="msave" type="button">Shelf mein save</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+  var TYPES=['Email','Letter','Message','Note'];
+  var drafts=[], cur=null, filter='All', query='', store=null, loaded=false, saveTimer=null, chain=Promise.resolve();
+  var $=function(id){return document.getElementById(id)};
+  var listEl=$('list'), pane=$('pane'), titleEl=$('title'), bodyEl=$('body'), kindEl=$('kind'), statusEl=$('status');
+
+  TYPES.forEach(function(t){var o=document.createElement('option');o.value=t;o.textContent=t;kindEl.appendChild(o)});
+
+  function fmt(ts){
+    if(!ts) return '';
+    var d=new Date(ts), now=new Date();
+    var opts=d.toDateString()===now.toDateString()?{hour:'numeric',minute:'2-digit'}:{day:'numeric',month:'short'};
+    return d.toLocaleString('en-IN',opts);
+  }
+  function newId(){return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+
+  /* ---- storage: shared database when available, browser storage otherwise ---- */
+  function dbStore(db){
+    var col=db.collection('drafts');
+    return {
+      shared:true,
+      subscribe:function(cb,err){
+        return col.orderBy('updatedAt','desc').onSnapshot(function(s){
+          cb(s.docs.map(function(d){var x=d.data()||{};x.id=d.id;return x}), s.metadata.fromCache);
+        },err);
+      },
+      save:function(id,data){return col.doc(id).set(data)},
+      remove:function(id){return col.doc(id).delete()}
+    };
+  }
+  function localStore(){
+    var K='draft-shelf-v1', subs=[];
+    function read(){try{return JSON.parse(localStorage.getItem(K)||'[]')}catch(e){return []}}
+    var mem=read();
+    function persist(){try{localStorage.setItem(K,JSON.stringify(mem))}catch(e){}}
+    function emit(){var l=mem.slice().sort(function(a,b){return b.updatedAt-a.updatedAt});subs.forEach(function(f){f(l,false)})}
+    return {
+      shared:false,
+      subscribe:function(cb){subs.push(cb);cb(mem.slice().sort(function(a,b){return b.updatedAt-a.updatedAt}),false);return function(){}},
+      save:function(id,data){
+        var x=Object.assign({id:id},data), i=mem.findIndex(function(m){return m.id===id});
+        if(i<0) mem.push(x); else mem[i]=x;
+        persist();emit();return Promise.resolve();
+      },
+      remove:function(id){mem=mem.filter(function(m){return m.id!==id});persist();emit();return Promise.resolve()}
+    };
+  }
+
+  /* ---- list ---- */
+  function renderChips(){
+    var box=$('chips'); box.textContent='';
+    ['All'].concat(TYPES).forEach(function(t){
+      var b=document.createElement('button');
+      b.className='chip';b.type='button';b.textContent=t;
+      b.setAttribute('aria-pressed',String(filter===t));
+      b.onclick=function(){filter=t;renderChips();renderList()};
+      box.appendChild(b);
+    });
+  }
+  function renderList(){
+    var q=query.trim().toLowerCase();
+    var rows=drafts.filter(function(d){
+      if(filter!=='All'&&d.kind!==filter) return false;
+      if(!q) return true;
+      return ((d.title||'')+' '+(d.body||'')).toLowerCase().indexOf(q)>=0;
+    });
+    $('count').textContent=loaded?(drafts.length+(drafts.length===1?' draft':' drafts')):'Loading';
+    listEl.textContent='';
+    if(!rows.length){
+      var li=document.createElement('li');li.className='empty';
+      var s=document.createElement('strong');
+      var p=document.createElement('span');
+      if(!drafts.length){s.textContent=loaded?'Nothing on the shelf yet':'Loading your drafts';p.textContent=loaded?'Ask Claude to save a draft here, or tap New draft and write one.':'';}
+      else{s.textContent='No matches';p.textContent='Try a different word or type.';}
+      li.appendChild(s);li.appendChild(p);listEl.appendChild(li);return;
+    }
+    rows.forEach(function(d){
+      var li=document.createElement('li');
+      var b=document.createElement('button');b.className='item';b.type='button';
+      if(cur&&cur.id===d.id) b.setAttribute('aria-current','true');
+      var t=document.createElement('div');t.className='t';t.textContent=d.title||'Untitled draft';
+      var p=document.createElement('div');p.className='p';p.textContent=(d.body||'').replace(/\s+/g,' ').slice(0,120)||'Empty';
+      var m=document.createElement('div');m.className='m';
+      var k=document.createElement('span');k.textContent=d.kind||'Note';
+      var dt=document.createElement('span');dt.textContent=fmt(d.updatedAt);
+      m.appendChild(k);m.appendChild(dt);
+      b.appendChild(t);b.appendChild(p);b.appendChild(m);
+      b.onclick=function(){openDraft(d)};
+      li.appendChild(b);listEl.appendChild(li);
+    });
+  }
+
+  /* ---- editor ---- */
+  function openDraft(d){
+    flush();
+    cur={id:d.id,createdAt:d.createdAt||Date.now()};
+    pane.dataset.mode='edit';
+    titleEl.value=d.title||'';bodyEl.value=d.body||'';kindEl.value=d.kind||'Note';
+    statusEl.textContent='';resetDel();
+    pane.classList.add('open');pane.classList.remove('idle');
+    renderList();
+    if(window.matchMedia('(min-width:860px)').matches===false&&!d.body) bodyEl.focus();
+  }
+  function closeEditor(){
+    flush();cur=null;
+    pane.dataset.mode='edit';
+    pane.classList.remove('open');pane.classList.add('idle');renderList();
+  }
+  function queueSave(){
+    if(!cur) return;
+    statusEl.textContent='Saving…';
+    clearTimeout(saveTimer);saveTimer=setTimeout(flush,600);
+  }
+  function flush(){
+    if(!cur||saveTimer===null) return;
+    clearTimeout(saveTimer);saveTimer=null;
+    if(!store) return;
+    var id=cur.id;
+    var data={title:titleEl.value.trim(),body:bodyEl.value,kind:kindEl.value,createdAt:cur.createdAt,updatedAt:Date.now()};
+    if(!data.title&&!data.body) {statusEl.textContent='';return}
+    chain=chain.then(function(){return store.save(id,data)}).then(function(){
+      if(cur&&cur.id===id) statusEl.textContent='Saved';
+    }).catch(function(e){
+      statusEl.textContent='Could not save';
+      showNote(e&&e.code==='invalid_argument'?'You can read drafts here but not change them.':'Saving failed. Your text is still on screen, so copy it before leaving.');
+    });
+  }
+  [titleEl,bodyEl].forEach(function(el){el.addEventListener('input',queueSave)});
+  kindEl.addEventListener('change',queueSave);
+  window.addEventListener('pagehide',flush);
+  document.addEventListener('visibilitychange',function(){if(document.hidden)flush()});
+
+  $('new').onclick=function(){
+    flush();
+    cur={id:newId(),createdAt:Date.now()};
+    pane.dataset.mode='edit';
+    titleEl.value='';bodyEl.value='';kindEl.value=filter==='All'?'Note':filter;
+    statusEl.textContent='';resetDel();
+    pane.classList.add('open');pane.classList.remove('idle');
+    renderList();titleEl.focus();
+  };
+  $('back').onclick=closeEditor;
+  $('search').addEventListener('input',function(e){query=e.target.value;renderList()});
+
+  $('copy').onclick=function(){
+    var txt=bodyEl.value, btn=$('copy');
+    function done(){btn.textContent='Copied';setTimeout(function(){btn.textContent='Copy text'},1500)}
+    try{
+      navigator.clipboard.writeText(txt).then(done,function(){bodyEl.select();btn.textContent='Press copy on keyboard';setTimeout(function(){btn.textContent='Copy text'},2500)});
+    }catch(e){bodyEl.select()}
+  };
+
+  var delTimer=null;
+  function resetDel(){clearTimeout(delTimer);$('del').textContent='Delete'}
+  $('del').onclick=function(){
+    var b=$('del');
+    if(b.textContent==='Delete'){b.textContent='Tap again to delete';delTimer=setTimeout(resetDel,3000);return}
+    resetDel();
+    var id=cur&&cur.id;clearTimeout(saveTimer);saveTimer=null;
+    closeEditor();
+    if(id&&store) chain=chain.then(function(){return store.remove(id)}).catch(function(){showNote('Could not delete that draft.')});
+  };
+
+  function showNote(t){var n=$('note');n.textContent=t;n.hidden=!t}
+
+  /* ---- start ---- */
+  /* ---- Patra banao: Hinglish + image in, formatted letter and .docx out ---- */
+  var sample=null, downloads=null, imgLimits=null, ctl=null;
+  var MK=function(id){return document.getElementById(id)};
+  function mstat(t){MK('mstatus').textContent=t||''}
+  function openMaker(){
+    flush();cur=null;
+    pane.dataset.mode='make';
+    pane.classList.add('open');pane.classList.remove('idle');
+    renderList();syncType();
+  }
+  function syncType(){MK('msandwrap').hidden=MK('mtype').value==='steno'}
+  MK('mk').onclick=openMaker;
+  MK('mback').onclick=closeEditor;
+  MK('mtype').addEventListener('change',syncType);
+  MK('mimg').addEventListener('change',function(){
+    var n=MK('mimg').files.length, max=imgLimits&&imgLimits.images?imgLimits.images.maxCount:null;
+    MK('mimgs').textContent=n?(n+(n===1?' image chuni':' images chuni')+(max&&n>max?'. Sirf pehli '+max+' use hongi.':'')):'';
+  });
+
+  function monthYear(){var d=new Date();return ('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear()}
+  var FORM14='फार्म 14 में श्रमिकों / फर्मों की व्यक्तिगत जानकारी जैसे (बैंक खाता नंबर, आधार नंबर, जी.एस.टी. नंबर, पता इत्यादि) अंकित होती है, जो डिजिटल व्यक्तिगत डेटा संरक्षण (DPDP) अधिनियम 2023 की धारा 44(3) द्वारा संशोधित सूचना का अधिकार अधिनियम की धारा 8(1)(जे) के अंतर्गत व्यक्तिगत जानकारी की श्रेणी में आती है। अतः उक्त जानकारी संशोधित अधिनियमानुसार व्यक्तिगत जानकारी होने के कारण जानकारी दिया जाना संभव नहीं है।';
+  function buildPrompt(type,notes,hasImg){
+    var kind={steno:'steno shakha ka sarkari patra/gyapan',rti:'RTI (सूचना का अधिकार अधिनियम 2005) se juda antaran/nirdesh patra jo karyalay ya range/parikshetra adhikari ko jaata hai',rtiuttar:'RTI ka uttar patra jo seedhe aavedak ko jaata hai'}[type];
+    var L=[
+      'Tum Karyalay Vanmandaladhikari, Mohla Vanmandal (Chhattisgarh) ke steno ho. Tumhe ek '+kind+' ka matter taiyar karna hai.',
+      hasImg?'Saath ki images me aavedan / patra / dastavez ki photo hai. Unhe dhyan se padho aur unka matter patra me use karo.':'',
+      'Neeche user ke Hinglish notes hain. Unka matlab samajh kar patra likho.',
+      '',
+      'NOTES:',notes||'(koi notes nahi, sirf images se banao)','',
+      'FORMAT NIYAM:',
+      '- Bhasha shuddh sarkari Hindi (Devanagari). Shabd: विषयांतर्गत लेख है कि, उपरोक्त, निर्धारित समय-सीमा, अतः, निर्देशित किया जाता है, अवगत कराएं, तत्काल प्रस्तुत करें, बाबत।',
+      '- Tone formal, adhikarik, nirdeshatmak (upar se neeche ke adhikari ko). Uchch karyalay ko likhna ho to "सादर अवगत कराना है कि" / "अवलोकनार्थ सादर प्रेषित" tone rakho.',
+      '- prati: patra paane wale ka padnaam aur karyalay/sthan, 2-3 line (jaise "परिक्षेत्र अधिकारी," aur "मोहला परिक्षेत्र, मोहला").',
+      '- vishay: ek-do line, ant me "बाबत।".',
+      '- body: ek hi paragraph, lagbhag 8-9 line (110-140 shabd). Pattern: (1) "विषयांतर्गत लेख है कि" se sthiti/karan, (2) samasya/kami, (3) "अतः आपको निर्देशित किया जाता है कि ..." se nirdesh, (4) samay-seema ya "तत्काल" ke saath ant.',
+      '- Naam, tarikh, kramank sirf wahi likho jo notes ya image me diye hain. Kuch pata na ho to khali mat chhodo, "......" likho. Kuch invent mat karo.'
+    ];
+    if(type!=='steno') L.push('- sandarbh: aavedak ka naam, aavedan dinank, aur patra kramank/dinank jo uplabdh ho (ek line).',
+      '- RTI vishay me: "सूचना का अधिकार अधिनियम 2005 के अंतर्गत श्री/श्रीमती ...... द्वारा चाही गई जानकारी उपलब्ध कराने बाबत।" (aavedak ko uttar ho to "...जानकारी प्रदाय बाबत।").');
+    if(type==='rti') L.push('- Body me adhiniyam ki dhara 7 ke anusar 30 din ki nirdharit samay-seema ka ullekh karo aur jaankari karyalay ko tatkal uplabdh karane ka nirdesh do.');
+    if(type==='rtiuttar') L.push(
+      '- Aavedan me kai bindu hon to body ek chhote parichay paragraph se shuru kar ke phir bindu-war uttar do: har bindu alag paragraph "1. ...", "2. ...".',
+      '- Agar kisi bindu me Form 14 ya shramikon/firmon ki vyaktigat jaankari (bank khata, aadhaar, GST, pata) maangi gayi ho aur dene se inkar karna ho, to us bindu ke uttar me ye para jaisa hai waisa likho: "'+FORM14+'"',
+      '- Tritiya paksh ki jaankari ho to jodo: "साथ ही उक्त जानकारी तृतीय पक्ष से संबंधित है तथा इतने तृतीय पक्षों की जानकारी अधिनियम की धारा 11 के अंतर्गत नहीं दी जा सकती।"');
+    L.push('- pratilipi: sirf tab bharo jab notes me copy/pratilipi ka zikr ho; warna khali array.',
+      '',
+      'OUTPUT: sirf ek JSON object, koi aur text nahi:',
+      '{"prati":["..."],"vishay":"...","sandarbh":"'+(type==='steno'?'':'...')+'","body":["paragraph 1","paragraph 2"],"pratilipi":[]}');
+    return L.join('\n');
+  }
+  function errCopy(e){
+    var c=e&&e.code;
+    if(c==='server') return e.message;
+    if(c==='not_granted') return 'Claude ki permission nahi mili, isliye draft nahi ban sakta.';
+    if(c==='rate_limited') return 'Abhi bahut zyada requests hain. Thodi der baad dobara try karo.';
+    if(c==='image_rejected') return 'Image sahi nahi hai ya bahut badi hai. Doosri image chuno.';
+    if(c==='invalid_json') return 'Draft samajh nahi aaya. Dobara "Draft banao" dabao.';
+    if(c==='refused') return 'Is input par draft nahi ban paya. Notes badal kar dekho.';
+    if(c==='sampling_disabled'||c==='images_unavailable') return 'Ye feature is account me available nahi hai.';
+    return 'Draft nahi ban paya. Dobara try karo.';
+  }
+  function fillOut(r,type){
+    function arr(x){return Array.isArray(x)?x.map(String):(x?[String(x)]:[])}
+    MK('mprati').value=arr(r.prati).join('\n');
+    MK('mvishay').value=r.vishay?String(r.vishay):'';
+    MK('msand').value=type==='steno'?'':(r.sandarbh?String(r.sandarbh):'');
+    MK('mbody').value=arr(r.body).join('\n\n');
+    MK('mcopy').value=arr(r.pratilipi).join('\n');
+    MK('mout').hidden=false;
+    MK('mout').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  MK('mstop').onclick=function(){if(ctl)ctl.abort()};
+  MK('mgo').onclick=async function(){
+    if(!sample){mstat('Ye feature is view me available nahi hai.');return}
+    var type=MK('mtype').value, notes=MK('mnotes').value.trim(), files=Array.prototype.slice.call(MK('mimg').files||[]);
+    if(!notes&&!files.length){mstat('Kuch likho ya image chuno.');return}
+    var opts={};
+    if(files.length){
+      if(imgLimits&&imgLimits.images) opts.images=files.slice(0,imgLimits.images.maxCount);
+      else mstat('Images is view me nahi ja sakti, sirf notes se bana raha hoon.');
+    }
+    ctl=new AbortController();opts.signal=ctl.signal;
+    MK('mgo').disabled=true;MK('mstop').hidden=false;mstat('Draft ban raha hai…');
+    try{
+      var r=await sample.json(buildPrompt(type,notes,!!opts.images),opts);
+      if(!r||typeof r!=='object'||Array.isArray(r)||!r.body) throw {code:'invalid_json'};
+      fillOut(r,type);mstat('Draft taiyar. Zarurat ho to badlo.');
+    }catch(e){
+      if(e&&e.code==='cancelled') mstat('Rok diya.'); else mstat(errCopy(e));
+    }finally{
+      MK('mgo').disabled=false;MK('mstop').hidden=true;ctl=null;
+    }
+  };
+
+  function lines(v){return v.split('\n').map(function(s){return s.trim()}).filter(Boolean)}
+  function readModel(){
+    return {type:MK('mtype').value,prati:lines(MK('mprati').value),vishay:MK('mvishay').value.trim(),
+      sand:MK('msand').value.trim(),body:MK('mbody').value.split(/\n\s*\n/).map(function(s){return s.replace(/\s*\n\s*/g,' ').trim()}).filter(Boolean),
+      copy:lines(MK('mcopy').value)};
+  }
+  function branch(m){return m.type==='steno'?'स्टेनो':'सू.अ.अ.'}
+  function composeText(m){
+    var o=['कार्यालय वनमंडलाधिकारी, मोहला वनमंडल, मोहला (छ.ग.)','दूरभाष – 07747-296553 (कार्या.)    ई-मेल – dfomohla@gmail.com','',
+      'ज्ञापन क्र. ......../'+branch(m)+'/ शाखा/        मोहला, दिनांक ......../'+monthYear(),'','प्रति,'];
+    m.prati.forEach(function(p){o.push('        '+p)});
+    o.push('','विषय :-     '+m.vishay);
+    if(m.type!=='steno'&&m.sand) o.push('संदर्भ :-   '+m.sand);
+    o.push('','                ————————000————————','');
+    m.body.forEach(function(p){o.push('        '+p,'')});
+    if(m.type==='rtiuttar') o.push('प्रथम अपीलीय अधिकारी,','मुख्य वन संरक्षक,','दुर्ग वृत्त दुर्ग','','        (अभिनव कुमार)','        भा.व.से.','        जन सूचना अधिकारी एवं','        वनमंडल अधिकारी','        मोहला वनमंडल मोहला');
+    else o.push('                                        वनमंडलाधिकारी','                                   मोहला वनमंडल, मोहला');
+    if(m.copy.length){o.push('','पृ. ज्ञापन क्र. ......../ शाखा/        मोहला, दिनांक ......','प्रतिलिपि :- सूचनार्थ एवं आवश्यक कार्यवाही हेतु');m.copy.forEach(function(c,i){o.push((i+1)+'. '+c)})}
+    return o.join('\n');
+  }
+
+  /* minimal .docx writer: A4, Kokila, one page layout of the Mohla letter */
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+  function runs(text,o){
+    o=o||{};
+    var rp=(o.b?'<w:b/><w:bCs/>':'')+(o.i?'<w:i/><w:iCs/>':'')+(o.sz?'<w:sz w:val="'+o.sz+'"/><w:szCs w:val="'+o.sz+'"/>':'');
+    return String(text).split('\t').map(function(seg,i){
+      return (i?'<w:r><w:tab/></w:r>':'')+(seg?'<w:r><w:rPr>'+rp+'</w:rPr><w:t xml:space="preserve">'+esc(seg)+'</w:t></w:r>':'');
+    }).join('');
+  }
+  function P(text,o){
+    o=o||{};
+    var pp='';
+    if(o.border==='bottom') pp+='<w:pBdr><w:bottom w:val="single" w:sz="8" w:space="1" w:color="000000"/></w:pBdr>';
+    if(o.border==='box') pp+='<w:pBdr><w:top w:val="single" w:sz="6" w:space="2" w:color="000000"/><w:left w:val="single" w:sz="6" w:space="4" w:color="000000"/><w:bottom w:val="single" w:sz="6" w:space="2" w:color="000000"/><w:right w:val="single" w:sz="6" w:space="4" w:color="000000"/></w:pBdr>';
+    if(o.tab) pp+='<w:tabs><w:tab w:val="right" w:pos="'+o.tab+'"/></w:tabs>';
+    pp+='<w:spacing w:before="'+(o.before||0)+'" w:after="'+(o.after||0)+'"'+(o.line?' w:line="'+o.line+'" w:lineRule="auto"':'')+'/>';
+    if(o.left||o.first||o.hang) pp+='<w:ind'+(o.left?' w:left="'+o.left+'"':'')+(o.first?' w:firstLine="'+o.first+'"':'')+(o.hang?' w:hanging="'+o.hang+'"':'')+'/>';
+    if(o.jc) pp+='<w:jc w:val="'+o.jc+'"/>';
+    return '<w:p><w:pPr>'+pp+'</w:pPr>'+runs(text,o)+'</w:p>';
+  }
+  function docXml(m){
+    var W=9638, b=[];
+    b.push(P('कार्यालय वनमंडलाधिकारी, मोहला वनमंडल, मोहला (छ.ग.)',{b:1,sz:32,jc:'center'}));
+    b.push(P('दूरभाष – 07747-296553 (कार्या.)    ई-मेल – dfomohla@gmail.com',{i:1,jc:'center',border:'bottom',after:120}));
+    b.push(P('ज्ञापन क्र. ......../'+branch(m)+'/ शाखा/\tमोहला, दिनांक ......../'+monthYear(),{tab:W,before:60,after:160}));
+    b.push(P('प्रति,'));
+    m.prati.forEach(function(p){b.push(P(p,{left:720}))});
+    b.push(P('विषय :-\t'+m.vishay,{before:160,left:1260,hang:1260,tab:1260}));
+    if(m.type!=='steno'&&m.sand) b.push(P('संदर्भ :-\t'+m.sand,{before:60,left:1260,hang:1260}));
+    b.push(P('————————000————————',{jc:'center',before:100,after:100}));
+    m.body.forEach(function(p){b.push(P(p,{jc:'both',first:720,line:360,after:100}))});
+    if(m.type==='rtiuttar'){
+      var L=['प्रथम अपीलीय अधिकारी,','मुख्य वन संरक्षक,','दुर्ग वृत्त दुर्ग'].map(function(t,i,a){return P(t,{b:1,border:'box',left:60})}).join('');
+      var R=P('',{after:300})+['(अभिनव कुमार)','भा.व.से.','जन सूचना अधिकारी एवं','वनमंडल अधिकारी','मोहला वनमंडल मोहला'].map(function(t){return P(t,{b:1,jc:'center'})}).join('');
+      var cell=function(c){return '<w:tc><w:tcPr><w:tcW w:w="4819" w:type="dxa"/></w:tcPr>'+c+'</w:tc>'};
+      b.push('<w:tbl><w:tblPr><w:tblW w:w="9638" w:type="dxa"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="4819"/><w:gridCol w:w="4819"/></w:tblGrid><w:tr>'+cell(L)+cell(R)+'</w:tr></w:tbl>');
+      b.push(P(''));
+    }else{
+      b.push(P('वनमंडलाधिकारी',{b:1,jc:'center',left:5200,before:360}));
+      b.push(P('मोहला वनमंडल, मोहला',{b:1,jc:'center',left:5200}));
+    }
+    if(m.copy.length){
+      b.push(P('पृ. ज्ञापन क्र. ......../ शाखा/\tमोहला, दिनांक ......',{tab:W,before:240}));
+      b.push(P('प्रतिलिपि :- सूचनार्थ एवं आवश्यक कार्यवाही हेतु',{before:60}));
+      m.copy.forEach(function(c,i){b.push(P((i+1)+'. '+c,{left:720,hang:360}))});
+    }
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'+b.join('')+'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>';
+  }
+  function buildDocx(m){
+    var z=new JSZip(), NS='http://schemas.openxmlformats.org/';
+    z.file('[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="'+NS+'package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>');
+    z.file('_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="'+NS+'package/2006/relationships"><Relationship Id="rId1" Type="'+NS+'officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    z.file('word/_rels/document.xml.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="'+NS+'package/2006/relationships"><Relationship Id="rId1" Type="'+NS+'officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    z.file('word/styles.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="'+NS+'wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Kokila" w:hAnsi="Kokila" w:eastAsia="Kokila" w:cs="Kokila"/><w:sz w:val="28"/><w:szCs w:val="28"/><w:lang w:val="en-IN" w:eastAsia="en-US" w:bidi="hi-IN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>');
+    z.file('word/document.xml',docXml(m));
+    return z.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  }
+
+  function readyModel(){
+    var m=readModel();
+    if(!m.vishay||!m.body.length){mstat('Vishay aur matter bhara hona chahiye.');return null}
+    return m;
+  }
+  MK('mdocx').onclick=async function(){
+    var m=readyModel();if(!m) return;
+    if(!downloads){mstat('Download is view me nahi hai. "Copy text" use karo.');return}
+    if(typeof JSZip==='undefined'){mstat('Docx banane wali library load nahi hui. Page dobara kholo.');return}
+    try{
+      var blob=await buildDocx(m);
+      var d=new Date(), name='patra-'+d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2)+'.docx';
+      await downloads.save({filename:name,data:blob});
+      mstat('Docx save ho gaya.');
+    }catch(e){
+      mstat(e&&e.code==='declined'?'Download cancel kiya.':'Docx nahi ban paya. Dobara try karo.');
+    }
+  };
+  MK('mcopybtn').onclick=function(){
+    var m=readyModel();if(!m) return;
+    var t=composeText(m);
+    try{navigator.clipboard.writeText(t).then(function(){mstat('Text copy ho gaya.')},function(){mstat('Copy nahi hua. Shelf mein save karke wahan se copy karo.')})}
+    catch(e){mstat('Copy nahi hua. Shelf mein save karke wahan se copy karo.')}
+  };
+  MK('msave').onclick=function(){
+    var m=readyModel();if(!m||!store) return;
+    var now=Date.now();
+    store.save(newId(),{title:m.vishay.slice(0,120),body:composeText(m),kind:'Letter',createdAt:now,updatedAt:now})
+      .then(function(){mstat('Shelf mein save ho gaya.')},function(){mstat('Save nahi hua.')});
+  };
+
+  /* ---- standalone (Vercel) replacements for the Claude-only capabilities ---- */
+  function shrink(file){
+    return new Promise(function(res,rej){
+      var img=new Image(), u=URL.createObjectURL(file);
+      img.onload=function(){
+        var s=Math.min(1,1600/Math.max(img.width,img.height)), c=document.createElement('canvas');
+        c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);
+        res(c.toDataURL('image/jpeg',0.85).split(',')[1]);
+      };
+      img.onerror=function(){URL.revokeObjectURL(u);rej({code:'image_rejected'})};
+      img.src=u;
+    });
+  }
+  function standaloneShims(){
+    imgLimits={images:{maxCount:5}};
+    downloads={save:function(r){
+      return new Promise(function(res){
+        var a=document.createElement('a');a.href=URL.createObjectURL(r.data);a.download=r.filename;
+        document.body.appendChild(a);a.click();
+        setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000);res({status:'saved'});
+      });
+    }};
+    sample={json:async function(prompt,opts){
+      var imgs=[];
+      if(opts&&opts.images){for(var i=0;i<opts.images.length;i++) imgs.push(await shrink(opts.images[i]))}
+      var pass='';try{pass=localStorage.getItem('draft-shelf-pass')||''}catch(e){}
+      async function call(p){
+        return fetch('/api/generate',{method:'POST',signal:opts&&opts.signal,
+          headers:{'content-type':'application/json','x-app-password':p},
+          body:JSON.stringify({prompt:prompt,images:imgs})});
+      }
+      var r=await call(pass);
+      if(r.status===401){
+        var p=window.prompt('Password daalo');
+        if(!p) throw {code:'cancelled'};
+        r=await call(p);
+        if(r.status===401) throw {code:'server',message:'Password galat hai.'};
+        try{localStorage.setItem('draft-shelf-pass',p)}catch(e){}
+      }
+      var j=null;try{j=await r.json()}catch(e){}
+      if(!r.ok) throw {code:'server',message:(j&&j.error)||'Server se jawab nahi aaya.'};
+      return j;
+    }};
+  }
+
+  async function start(){
+    renderChips();renderList();
+    var db=null;
+    standaloneShims();
+    var timer=setTimeout(function(){if(!loaded) showNote("Can't reach your saved drafts yet. Anything shown may be out of date.")},10000);
+    function onData(list,fromCache){
+      drafts=list;
+      if(!fromCache){loaded=true;clearTimeout(timer);if($('note').textContent.indexOf("Can't reach")===0)showNote('')}
+      else if(list.length) loaded=true;
+      renderList();
+    }
+    if(db){
+      store=dbStore(db);
+      store.subscribe(onData,function(e){clearTimeout(timer);loaded=true;showNote(e&&e.code==='revoked'?'Access to this shelf changed. Reopen the page.':'Drafts could not be loaded.');renderList()});
+    }else{
+      store=localStore();
+      showNote('Drafts are saved in this browser only.');
+      store.subscribe(onData);
+    }
+  }
+  start();
+})();
+</script>
+
+</html>
